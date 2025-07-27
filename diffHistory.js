@@ -138,6 +138,7 @@ const getVersion = (model, id, version, queryOpts, cb) => {
 
     return model
         .findById(id, null, queryOpts)
+        .lean({ autopopulate: true })
         .then(latest => {
             latest = latest || {};
             return History.find(
