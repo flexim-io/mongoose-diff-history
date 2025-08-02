@@ -130,6 +130,36 @@ const saveDiffs = (queryObject, opts) =>
         .cursor()
         .eachAsync(result => saveDiffHistory(queryObject, result, opts));
 
+// This function is used since jsondiffpatch can't handle type changes from array to object
+// So we will follow flexim type change logic and normalize it for patcher
+// https://github.com/benjamine/jsondiffpatch/blob/master/docs/deltas.md#array-with-inner-changes
+
+function normalizeObjectForPatch(currentValue, delta) {
+    const normalized = { ...currentValue };
+    
+    for (const key in delta) {
+        if (key === '_t') continue;
+    
+        const fieldDelta = delta[key];
+        const original = currentValue[key];
+    
+        if (fieldDelta && typeof fieldDelta === 'object' && fieldDelta._t === 'a') {
+            if (!Array.isArray(original)) {
+                if (typeof original === 'object' && original !== null) {
+                    normalized[key] = [original];
+                }
+            }
+        } else if (
+            Array.isArray(original) &&
+            (!fieldDelta || typeof fieldDelta !== 'object' || fieldDelta._t !== 'a')
+        ) {
+            normalized[key] = original[0];
+        }
+    }
+    
+    return normalized;
+}
+
 const getVersion = (model, id, version, queryOpts, cb) => {
     if (typeof queryOpts === 'function') {
         cb = queryOpts;
@@ -153,6 +183,7 @@ const getVersion = (model, id, version, queryOpts, cb) => {
                 .lean()
                 .cursor()
                 .eachAsync(history => {
+                    latest = normalizeObjectForPatch(latest, history.diff)
                     diffPatcher.unpatch(latest, history.diff);
                 })
                 .then(() => {
